@@ -1,0 +1,64 @@
+name: CD Python (Docker Compose)
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Login to DigitalOcean
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2.3.0
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      # Build image
+      - name: Build Docker image
+        run: |
+          docker build -t sidewalk-api:latest .
+
+      # Tag image
+      - name: Tag Docker image
+        run: |
+          REGISTRY=registry.digitalocean.com/scenwise-registry
+          IMAGE=sidewalk-api
+          BRANCH=$(echo ${GITHUB_REF#refs/heads/})
+          COMMIT=$(git rev-parse --short HEAD)
+
+          docker tag $IMAGE $REGISTRY/$IMAGE:$BRANCH-latest
+          docker tag $IMAGE $REGISTRY/$IMAGE:$BRANCH-$COMMIT
+
+      # Push image
+      - name: Push Docker image
+        run: |
+          REGISTRY=registry.digitalocean.com/scenwise-registry
+          IMAGE=sidewalk-api
+          BRANCH=$(echo ${GITHUB_REF#refs/heads/})
+
+          docker push $REGISTRY/$IMAGE:$BRANCH-latest
+          docker push $REGISTRY/$IMAGE:$BRANCH-$(git rev-parse --short HEAD)
+
+      # 🚀 Deploy using EXISTING docker-compose ONLY
+      - name: Deploy via Docker Compose
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: 159.223.223.232
+          username: root
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd /opt/sidepath-detection
+            docker-compose pull
+            docker-compose up -d --force-recreate

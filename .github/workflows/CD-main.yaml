@@ -1,0 +1,55 @@
+name: CD Python API
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Login to DigitalOcean
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2.3.0
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Log in to DigitalOcean Container Registry
+        run: doctl registry login --expiry-seconds 600
+
+      # Build Docker image
+      - name: Build Docker image
+        run: |
+          docker build --no-cache -t sidewalk-api:latest .
+
+      # Tag image
+      - name: Tag Docker image
+        run: |
+          IMAGE_NAME=sidewalk-api
+          REGISTRY=registry.digitalocean.com/scenwise-registry
+
+          TAG_BRANCH=$(echo ${GITHUB_REF#refs/heads/})
+          TAG_COMMIT=$(git rev-parse --short HEAD)
+
+          docker tag $IMAGE_NAME $REGISTRY/$IMAGE_NAME:$TAG_BRANCH-$TAG_COMMIT
+          docker tag $IMAGE_NAME $REGISTRY/$IMAGE_NAME:$TAG_BRANCH-latest
+
+      # Push image
+      - name: Push Docker image to DigitalOcean Registry
+        run: |
+          IMAGE_NAME=sidewalk-api
+          REGISTRY=registry.digitalocean.com/scenwise-registry
+
+          TAG_BRANCH=$(echo ${GITHUB_REF#refs/heads/})
+          TAG_COMMIT=$(git rev-parse --short HEAD)
+
+          docker push $REGISTRY/$IMAGE_NAME:$TAG_BRANCH-$TAG_COMMIT
+          docker push $REGISTRY/$IMAGE_NAME:$TAG_BRANCH-latest
